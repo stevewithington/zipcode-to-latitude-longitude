@@ -117,7 +117,11 @@ export default function App() {
             title="Refresh Database"
             className="p-2 text-neutral-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <RefreshCw className={`w-5 h-5 ${refreshing ? 'animate-spin' : ''}`} />
+            {refreshing ? (
+              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-indigo-600"></div>
+            ) : (
+              <RefreshCw className="w-5 h-5" />
+            )}
           </button>
         </div>
 

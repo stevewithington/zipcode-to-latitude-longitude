@@ -6,6 +6,61 @@ import AdmZip from "adm-zip";
 import fs from "fs";
 import swaggerUi from "swagger-ui-express";
 
+async function refreshDatabase(db: Database.Database) {
+  console.log("Downloading and populating zipcode database from geonames.org...");
+  try {
+    const response = await fetch("https://download.geonames.org/export/zip/US.zip");
+    if (!response.ok) throw new Error(`Failed to fetch US.zip: ${response.statusText}`);
+    
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    
+    const zip = new AdmZip(buffer);
+    const zipEntries = zip.getEntries();
+    const usTxtEntry = zipEntries.find(entry => entry.entryName === "US.txt");
+    
+    if (usTxtEntry) {
+      const text = usTxtEntry.getData().toString("utf8");
+      const lines = text.split("\n");
+      
+      const insert = db.prepare(`
+        INSERT OR REPLACE INTO zipcodes (zipcode, city, state, state_abbr, latitude, longitude)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `);
+      
+      const insertMany = db.transaction((lines: string[]) => {
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          const parts = line.split("\t");
+          if (parts.length >= 11) {
+            const zipcode = parts[1];
+            const city = parts[2];
+            const state = parts[3];
+            const state_abbr = parts[4];
+            const latitude = parseFloat(parts[9]);
+            const longitude = parseFloat(parts[10]);
+            insert.run(zipcode, city, state, state_abbr, latitude, longitude);
+          }
+        }
+      });
+      
+      insertMany(lines);
+      
+      const now = new Date().toISOString();
+      db.prepare("INSERT OR REPLACE INTO metadata (key, value) VALUES ('last_refreshed', ?)").run(now);
+      
+      console.log("Database populated successfully.");
+      return { success: true, message: "Database populated successfully." };
+    } else {
+      console.error("US.txt not found in the downloaded zip file.");
+      return { success: false, error: "US.txt not found in the downloaded zip file." };
+    }
+  } catch (error) {
+    console.error("Error setting up database:", error);
+    return { success: false, error: error instanceof Error ? error.message : "Unknown error" };
+  }
+}
+
 async function setupDatabase() {
   const dbPath = path.join(process.cwd(), "zipcodes.db");
   const db = new Database(dbPath);
@@ -21,56 +76,24 @@ async function setupDatabase() {
     )
   `);
 
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS metadata (
+      key TEXT PRIMARY KEY,
+      value TEXT
+    )
+  `);
+
   const { count } = db.prepare("SELECT COUNT(*) as count FROM zipcodes").get() as { count: number };
   
   if (count === 0) {
-    console.log("Downloading and populating zipcode database from geonames.org...");
-    try {
-      const response = await fetch("https://download.geonames.org/export/zip/US.zip");
-      if (!response.ok) throw new Error(`Failed to fetch US.zip: ${response.statusText}`);
-      
-      const arrayBuffer = await response.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
-      
-      const zip = new AdmZip(buffer);
-      const zipEntries = zip.getEntries();
-      const usTxtEntry = zipEntries.find(entry => entry.entryName === "US.txt");
-      
-      if (usTxtEntry) {
-        const text = usTxtEntry.getData().toString("utf8");
-        const lines = text.split("\n");
-        
-        const insert = db.prepare(`
-          INSERT OR IGNORE INTO zipcodes (zipcode, city, state, state_abbr, latitude, longitude)
-          VALUES (?, ?, ?, ?, ?, ?)
-        `);
-        
-        const insertMany = db.transaction((lines: string[]) => {
-          for (const line of lines) {
-            if (!line.trim()) continue;
-            const parts = line.split("\t");
-            if (parts.length >= 11) {
-              const zipcode = parts[1];
-              const city = parts[2];
-              const state = parts[3];
-              const state_abbr = parts[4];
-              const latitude = parseFloat(parts[9]);
-              const longitude = parseFloat(parts[10]);
-              insert.run(zipcode, city, state, state_abbr, latitude, longitude);
-            }
-          }
-        });
-        
-        insertMany(lines);
-        console.log("Database populated successfully.");
-      } else {
-        console.error("US.txt not found in the downloaded zip file.");
-      }
-    } catch (error) {
-      console.error("Error setting up database:", error);
-    }
+    await refreshDatabase(db);
   } else {
     console.log(`Database already populated with ${count} zipcodes.`);
+    // Ensure metadata exists for existing databases
+    const { metaCount } = db.prepare("SELECT COUNT(*) as metaCount FROM metadata WHERE key = 'last_refreshed'").get() as { metaCount: number };
+    if (metaCount === 0) {
+      db.prepare("INSERT OR REPLACE INTO metadata (key, value) VALUES ('last_refreshed', ?)").run(new Date().toISOString());
+    }
   }
   
   return db;
@@ -173,6 +196,40 @@ async function startServer() {
           },
         },
       },
+      '/api/refresh': {
+        post: {
+          summary: 'Refresh zipcode database',
+          description: 'Downloads the latest US.zip from GeoNames and updates the SQLite database.',
+          responses: {
+            '200': {
+              description: 'Successful refresh',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      message: { type: 'string', example: 'Database populated successfully.' },
+                    },
+                  },
+                },
+              },
+            },
+            '500': {
+              description: 'Internal Server Error',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      error: { type: 'string', example: 'Failed to refresh database.' },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
     },
   };
 
@@ -204,6 +261,33 @@ async function startServer() {
     } catch (error) {
       console.error("Error querying zipcode data:", error);
       return res.status(500).json({ error: "Failed to fetch zipcode data." });
+    }
+  });
+
+  // API Route to refresh the database
+  app.post("/api/refresh", async (req, res) => {
+    try {
+      const result = await refreshDatabase(db);
+      if (result.success) {
+        return res.json({ message: result.message });
+      } else {
+        return res.status(500).json({ error: result.error });
+      }
+    } catch (error) {
+      console.error("Error in /api/refresh:", error);
+      return res.status(500).json({ error: "Failed to refresh database." });
+    }
+  });
+
+  // API Route to get database status
+  app.get("/api/status", (req, res) => {
+    try {
+      const stmt = db.prepare("SELECT value FROM metadata WHERE key = 'last_refreshed'");
+      const row = stmt.get() as any;
+      return res.json({ lastRefreshed: row ? row.value : null });
+    } catch (error) {
+      console.error("Error fetching status:", error);
+      return res.status(500).json({ error: "Failed to fetch status." });
     }
   });
 

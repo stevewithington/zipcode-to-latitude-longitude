@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, MapPin, AlertCircle, Navigation, ChevronDown } from 'lucide-react';
+import { Search, MapPin, AlertCircle, Navigation, ChevronDown, RefreshCw } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
@@ -26,7 +26,49 @@ export default function App() {
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [showDirections, setShowDirections] = useState(false);
+  const [refreshMessage, setRefreshMessage] = useState('');
+  const [lastRefreshed, setLastRefreshed] = useState<string | null>(null);
+
+  const fetchStatus = async () => {
+    try {
+      const response = await fetch('/api/status');
+      const data = await response.json();
+      if (data.lastRefreshed) {
+        setLastRefreshed(new Date(data.lastRefreshed).toLocaleString());
+      }
+    } catch (err) {
+      console.error('Failed to fetch status:', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchStatus();
+  }, []);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    setRefreshMessage('');
+    setError('');
+    
+    try {
+      const response = await fetch('/api/refresh', { method: 'POST' });
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to refresh database');
+      }
+      
+      setRefreshMessage(data.message || 'Database refreshed successfully');
+      fetchStatus();
+      setTimeout(() => setRefreshMessage(''), 3000);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -56,15 +98,34 @@ export default function App() {
   return (
     <div className="min-h-screen bg-neutral-50 flex items-center justify-center p-4 font-sans">
       <div className="max-w-md w-full bg-white rounded-2xl shadow-sm border border-neutral-200 p-8">
-        <div className="flex items-center gap-3 mb-8">
-          <div className="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-xl flex items-center justify-center">
-            <MapPin className="w-5 h-5" />
+        <div className="flex items-center justify-between mb-8">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-xl flex items-center justify-center">
+              <MapPin className="w-5 h-5" />
+            </div>
+            <div>
+              <h1 className="text-xl font-semibold text-neutral-900">Zipcode Locator</h1>
+              <p className="text-sm text-neutral-500">Find coordinates for any US zipcode</p>
+              {lastRefreshed && (
+                <p className="text-xs text-neutral-400 mt-1">Last updated: {lastRefreshed}</p>
+              )}
+            </div>
           </div>
-          <div>
-            <h1 className="text-xl font-semibold text-neutral-900">Zipcode Locator</h1>
-            <p className="text-sm text-neutral-500">Find coordinates for any US zipcode</p>
-          </div>
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing}
+            title="Refresh Database"
+            className="p-2 text-neutral-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <RefreshCw className={`w-5 h-5 ${refreshing ? 'animate-spin' : ''}`} />
+          </button>
         </div>
+
+        {refreshMessage && (
+          <div className="mb-6 bg-green-50 text-green-600 p-3 rounded-xl text-sm text-center font-medium">
+            {refreshMessage}
+          </div>
+        )}
 
         <form onSubmit={handleSearch} className="mb-8">
           <div className="relative">

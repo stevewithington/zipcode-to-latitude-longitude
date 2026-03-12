@@ -9,6 +9,7 @@ Built with React, Vite, Express, and Tailwind CSS, this project serves both as a
 - **RESTful API Endpoint**: Fast and reliable zipcode lookups returning JSON data.
 - **Swagger API UI**: Interactive API documentation and testing interface.
 - **Local Database**: Downloads and queries a local SQLite database populated from the GeoNames dataset for ultra-fast lookups.
+- **Database Refresh**: Keep your data up-to-date with a dedicated API endpoint and UI button to re-download the latest GeoNames dataset.
 - **Interactive UI & Map**: A clean, responsive React frontend that plots the resulting location on an interactive OpenStreetMap and provides quick links for directions via Apple Maps, Google Maps, and Waze.
 - **Input Validation**: Ensures only valid 5-digit US zipcodes are processed.
 - **Error Handling**: Graceful error messages for invalid or unfound zipcodes.
@@ -53,6 +54,28 @@ curl http://localhost:3000/api/zipcode/90210
 - `404 Not Found`: Zipcode not found or location data unavailable.
 - `500 Internal Server Error`: Failed to fetch zipcode data.
 
+### Refresh Database
+
+Downloads the latest `US.zip` dataset from GeoNames and updates the local SQLite database. This can also be triggered directly from the web UI using the refresh button.
+
+**Endpoint:**
+`POST /api/refresh`
+
+**Example Request:**
+```bash
+curl -X POST http://localhost:3000/api/refresh
+```
+
+**Example Response (200 OK):**
+```json
+{
+  "message": "Database populated successfully."
+}
+```
+
+**Error Responses:**
+- `500 Internal Server Error`: Failed to refresh database.
+
 ## Setup and Configuration
 
 ### Prerequisites
@@ -96,7 +119,7 @@ To build the application for production:
 - **Backend**: Node.js, Express, Swagger UI
 - **Language**: TypeScript
 - **Database**: SQLite (via `better-sqlite3`)
-- **Data Source**: [GeoNames](https://download.geonames.org/export/zip/US.zip) (downloaded and parsed automatically on startup)
+- **Data Source**: [GeoNames](https://download.geonames.org/export/zip/US.zip) (downloaded and parsed automatically on startup, or manually via the refresh endpoint)
 
 ## License
 

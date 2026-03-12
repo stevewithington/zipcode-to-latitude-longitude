@@ -1,0 +1,5 @@
+{
+  "name": "Zipcode Location API",
+  "description": "An API service that returns the latitude and longitude of a given US zipcode.",
+  "requestFramePermissions": []
+}

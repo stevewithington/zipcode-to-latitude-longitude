@@ -10,6 +10,7 @@ Built with React, Vite, Express, and Tailwind CSS, this project serves both as a
 - **Swagger API UI**: Interactive API documentation and testing interface.
 - **Local Database**: Downloads and queries a local SQLite database populated from the GeoNames dataset for ultra-fast lookups.
 - **Database Refresh**: Keep your data up-to-date with a dedicated API endpoint and UI button to re-download the latest GeoNames dataset.
+- **Rate Limiting**: The refresh endpoint is globally rate-limited (1 request per hour) to prevent abuse and DDOS attacks.
 - **Interactive UI & Map**: A clean, responsive React frontend that plots the resulting location on an interactive OpenStreetMap and provides quick links for directions via Apple Maps, Google Maps, and Waze.
 - **Input Validation**: Ensures only valid 5-digit US zipcodes are processed.
 - **Error Handling**: Graceful error messages for invalid or unfound zipcodes.
@@ -89,6 +90,15 @@ curl -X POST http://localhost:3000/api/refresh \
 - Node.js (v18 or higher recommended)
 - npm (Node Package Manager)
 
+### Environment Variables
+
+Create a `.env` file in the root of the project and add the following variable:
+
+```env
+# Required for the /api/refresh endpoint to work
+ADMIN_SECRET_KEY=your_secure_secret_key_here
+```
+
 ### Installation
 
 1. Clone the repository and navigate to the project directory.
@@ -104,6 +114,9 @@ To start the development server (which runs both the Express API and the Vite Re
 ```bash
 npm run dev
 ```
+
+> **Note:** On the very first startup, the server will automatically download the `US.zip` dataset from GeoNames (approx. 1MB) and populate the local SQLite database. This may take a few seconds.
+
 The application will be available at `http://localhost:3000`.
 
 ### Production Build
@@ -118,6 +131,25 @@ To build the application for production:
    ```bash
    npm start
    ```
+
+## Testing
+
+This project uses [Playwright](https://playwright.dev/) for both API integration testing and End-to-End (E2E) UI testing.
+
+### Running Tests
+
+To run the test suite, use the following command:
+
+```bash
+npm run test
+```
+
+This will automatically start the development server and run the tests in the background.
+
+### Test Coverage
+
+- **API Tests (`tests/api.spec.ts`)**: Verifies the `/api/zipcode/:zipcode` and `/api/refresh` endpoints, including valid/invalid inputs, rate limiting, and authentication.
+- **E2E UI Tests (`tests/e2e.spec.ts`)**: Simulates user interactions such as searching for a zipcode, viewing the map, interacting with the directions dropdown, and using the admin refresh modal.
 
 ## Tech Stack
 

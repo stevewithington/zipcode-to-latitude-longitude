@@ -61,9 +61,13 @@ Downloads the latest `US.zip` dataset from GeoNames and updates the local SQLite
 **Endpoint:**
 `POST /api/refresh`
 
+**Headers:**
+- `x-admin-secret` (string, required): The admin secret key configured in the `.env` file (`ADMIN_SECRET_KEY`).
+
 **Example Request:**
 ```bash
-curl -X POST http://localhost:3000/api/refresh
+curl -X POST http://localhost:3000/api/refresh \
+  -H "x-admin-secret: your_secret_key_here"
 ```
 
 **Example Response (200 OK):**
@@ -74,7 +78,9 @@ curl -X POST http://localhost:3000/api/refresh
 ```
 
 **Error Responses:**
-- `500 Internal Server Error`: Failed to refresh database.
+- `401 Unauthorized`: Invalid or missing admin secret key.
+- `429 Too Many Requests`: A database refresh is already in progress, or the global rate limit (1 request per hour) has been exceeded.
+- `500 Internal Server Error`: Failed to refresh database or server configuration error.
 
 ## Setup and Configuration
 

@@ -5,6 +5,7 @@ import Database from "better-sqlite3";
 import AdmZip from "adm-zip";
 import fs from "fs";
 import swaggerUi from "swagger-ui-express";
+import rateLimit from "express-rate-limit";
 
 async function refreshDatabase(db: Database.Database) {
   console.log("Downloading and populating zipcode database from geonames.org...");
@@ -200,6 +201,17 @@ async function startServer() {
         post: {
           summary: 'Refresh zipcode database',
           description: 'Downloads the latest US.zip from GeoNames and updates the SQLite database.',
+          parameters: [
+            {
+              in: 'header',
+              name: 'x-admin-secret',
+              required: true,
+              schema: {
+                type: 'string',
+              },
+              description: 'Admin secret key configured in the server environment',
+            },
+          ],
           responses: {
             '200': {
               description: 'Successful refresh',
@@ -209,6 +221,32 @@ async function startServer() {
                     type: 'object',
                     properties: {
                       message: { type: 'string', example: 'Database populated successfully.' },
+                    },
+                  },
+                },
+              },
+            },
+            '401': {
+              description: 'Unauthorized',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      error: { type: 'string', example: 'Unauthorized: Invalid or missing admin secret key.' },
+                    },
+                  },
+                },
+              },
+            },
+            '429': {
+              description: 'Too Many Requests',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      error: { type: 'string', example: 'Global rate limit exceeded. The database can only be refreshed once per hour. Please try again later.' },
                     },
                   },
                 },
@@ -264,8 +302,34 @@ async function startServer() {
     }
   });
 
+  let isRefreshing = false;
+
+  // Configure global rate limiter for the refresh endpoint
+  // Limit to 1 request per hour (60 * 60 * 1000 ms)
+  const refreshRateLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000,
+    max: 1,
+    message: { error: "Global rate limit exceeded. The database can only be refreshed once per hour. Please try again later." },
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: () => "global", // Use a static string to make it a global limit instead of IP-based
+  });
+
   // API Route to refresh the database
-  app.post("/api/refresh", async (req, res) => {
+  app.post("/api/refresh", refreshRateLimiter, async (req, res) => {
+    const adminSecret = req.headers["x-admin-secret"];
+    if (!process.env.ADMIN_SECRET_KEY) {
+      return res.status(500).json({ error: "Server configuration error: ADMIN_SECRET_KEY is not set." });
+    }
+    if (adminSecret !== process.env.ADMIN_SECRET_KEY) {
+      return res.status(401).json({ error: "Unauthorized: Invalid or missing admin secret key." });
+    }
+
+    if (isRefreshing) {
+      return res.status(429).json({ error: "A database refresh is already in progress. Please try again later." });
+    }
+
+    isRefreshing = true;
     try {
       const result = await refreshDatabase(db);
       if (result.success) {
@@ -276,6 +340,8 @@ async function startServer() {
     } catch (error) {
       console.error("Error in /api/refresh:", error);
       return res.status(500).json({ error: "Failed to refresh database." });
+    } finally {
+      isRefreshing = false;
     }
   });
 

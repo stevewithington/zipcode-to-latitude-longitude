@@ -30,6 +30,8 @@ export default function App() {
   const [showDirections, setShowDirections] = useState(false);
   const [refreshMessage, setRefreshMessage] = useState('');
   const [lastRefreshed, setLastRefreshed] = useState<string | null>(null);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [adminKey, setAdminKey] = useState('');
 
   const fetchStatus = async () => {
     try {
@@ -47,13 +49,23 @@ export default function App() {
     fetchStatus();
   }, []);
 
-  const handleRefresh = async () => {
+  const handleRefresh = () => {
+    setShowAuthModal(true);
+  };
+
+  const confirmRefresh = async () => {
+    setShowAuthModal(false);
     setRefreshing(true);
     setRefreshMessage('');
     setError('');
     
     try {
-      const response = await fetch('/api/refresh', { method: 'POST' });
+      const response = await fetch('/api/refresh', { 
+        method: 'POST',
+        headers: {
+          'x-admin-secret': adminKey
+        }
+      });
       const data = await response.json();
       
       if (!response.ok) {
@@ -62,6 +74,7 @@ export default function App() {
       
       setRefreshMessage(data.message || 'Database refreshed successfully');
       fetchStatus();
+      setAdminKey('');
       setTimeout(() => setRefreshMessage(''), 3000);
     } catch (err: any) {
       setError(err.message);
@@ -253,6 +266,38 @@ export default function App() {
           </div>
         )}
       </div>
+
+      {/* Auth Modal */}
+      {showAuthModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl">
+            <h2 className="text-lg font-semibold text-neutral-900 mb-2">Admin Authentication</h2>
+            <p className="text-sm text-neutral-500 mb-4">Please enter the admin secret key to refresh the database.</p>
+            <input
+              type="password"
+              value={adminKey}
+              onChange={(e) => setAdminKey(e.target.value)}
+              placeholder="Admin Secret Key"
+              className="w-full px-4 py-2 bg-neutral-50 border border-neutral-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 mb-4"
+            />
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setShowAuthModal(false)}
+                className="px-4 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-100 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmRefresh}
+                disabled={!adminKey}
+                className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors disabled:opacity-50"
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
